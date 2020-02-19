@@ -11,7 +11,7 @@ use crate::platform::{self, OsIpcChannel, OsIpcReceiver, OsIpcReceiverSet, OsIpc
 use crate::platform::{OsIpcOneShotServer, OsIpcSelectionResult, OsIpcSharedMemory, OsOpaqueIpcChannel};
 
 use bincode;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
 use std::cell::RefCell;
 use std::cmp::min;
 use std::fmt::{self, Debug, Formatter};
@@ -807,13 +807,17 @@ fn serialize_os_ipc_sender<S>(os_ipc_sender: &OsIpcSender, serializer: S)
     index.serialize(serializer)
 }
 
-fn deserialize_os_ipc_sender<'de, D>(deserializer: D)
-                                -> Result<OsIpcSender, D::Error> where D: Deserializer<'de> {
+fn deserialize_os_ipc_sender<'de, D>(deserializer: D) -> Result<OsIpcSender, D::Error>
+where
+    D: Deserializer<'de>,
+{
     let index: usize = Deserialize::deserialize(deserializer)?;
     OS_IPC_CHANNELS_FOR_DESERIALIZATION.with(|os_ipc_channels_for_deserialization| {
-        // FIXME(pcwalton): This could panic if the data was corrupt and the index was out of
-        // bounds. We should return an `Err` result instead.
-        Ok(os_ipc_channels_for_deserialization.borrow_mut()[index].to_sender())
+        os_ipc_channels_for_deserialization
+            .borrow_mut()
+            .get_mut(index)
+            .map(|channel| channel.to_sender())
+            .ok_or_else(|| D::Error::custom(format_args!("Invalid channel index {}", index)))
     })
 }
 
@@ -830,13 +834,17 @@ fn serialize_os_ipc_receiver<S>(os_receiver: &OsIpcReceiver, serializer: S)
     index.serialize(serializer)
 }
 
-fn deserialize_os_ipc_receiver<'de, D>(deserializer: D)
-                                -> Result<OsIpcReceiver, D::Error> where D: Deserializer<'de> {
+fn deserialize_os_ipc_receiver<'de, D>(deserializer: D) -> Result<OsIpcReceiver, D::Error>
+where
+    D: Deserializer<'de>,
+{
     let index: usize = Deserialize::deserialize(deserializer)?;
 
     OS_IPC_CHANNELS_FOR_DESERIALIZATION.with(|os_ipc_channels_for_deserialization| {
-        // FIXME(pcwalton): This could panic if the data was corrupt and the index was out
-        // of bounds. We should return an `Err` result instead.
-        Ok(os_ipc_channels_for_deserialization.borrow_mut()[index].to_receiver())
+        os_ipc_channels_for_deserialization
+            .borrow_mut()
+            .get_mut(index)
+            .map(|channel| channel.to_receiver())
+            .ok_or_else(|| D::Error::custom(format_args!("Invalid channel index {}", index)))
     })
 }
